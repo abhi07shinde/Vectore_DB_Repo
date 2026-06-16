@@ -53,7 +53,7 @@ variable "admin_ssh_cidr_blocks" {
     Set via GitHub Secret: ADMIN_SSH_CIDR (comma-separated)
   EOT
   type        = list(string)
-  default     = ["0.0.0.0/0"]  # Override this via tfvars or GitHub Secret
+  default     = ["0.0.0.0/0"] # Override this via tfvars or GitHub Secret
 }
 
 # ------------------------------------------------------------------------------
@@ -78,7 +78,7 @@ variable "ami_id" {
     Find latest: https://cloud-images.ubuntu.com/locator/ec2/
   EOT
   type        = string
-  default     = "ami-0dee22c13ea7a9a67"  # Ubuntu 22.04 LTS ap-south-1 (2024)
+  default     = "ami-0dee22c13ea7a9a67" # Ubuntu 22.04 LTS ap-south-1 (2024)
 }
 
 # ------------------------------------------------------------------------------

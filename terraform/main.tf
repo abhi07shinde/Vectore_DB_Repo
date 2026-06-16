@@ -174,8 +174,8 @@ resource "aws_instance" "qdrant" {
   depends_on = [aws_iam_instance_profile.qdrant_profile]
 
   tags = {
-    Name        = "${var.project_name}-server"
-    Role        = "vector-database"
+    Name         = "${var.project_name}-server"
+    Role         = "vector-database"
     BackupPolicy = "daily"
   }
 
@@ -205,8 +205,8 @@ resource "aws_ebs_volume" "qdrant_data" {
   iops       = 3000 # IOPS (gp3 default, free tier)
 
   tags = {
-    Name        = "${var.project_name}-data-volume"
-    Role        = "qdrant-storage"
+    Name         = "${var.project_name}-data-volume"
+    Role         = "qdrant-storage"
     BackupPolicy = "daily"
   }
 }

@@ -63,6 +63,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # Required so git push works from within the workflow
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -84,10 +88,24 @@ jobs:
             -backend-config="region=${{ secrets.AWS_REGION }}" \
             -backend-config="key=qdrant/terraform.tfstate"
 
-      - name: Terraform Format Check
+      - name: Terraform Format — Auto-fix & Commit
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform fmt -check -recursive
-        continue-on-error: false
+        run: |
+          # Auto-format all .tf files
+          terraform fmt -recursive
+
+          # Check if any files were changed by fmt
+          if ! git diff --quiet; then
+            echo "⚠️  Terraform files were not properly formatted. Auto-fixing..."
+            git config --global user.name  "github-actions[bot]"
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "style: auto-format Terraform files via terraform fmt [skip ci]"
+            git push
+            echo "✅ Formatting fixed and committed automatically."
+          else
+            echo "✅ All Terraform files are already properly formatted."
+          fi
 
       - name: Terraform Validate
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -99,7 +117,7 @@ jobs:
           if [ "${{ job.status }}" == "success" ]; then
             echo "✅ Terraform validation passed"
           else
-            echo "❌ Terraform validation failed — check fmt and validate errors above"
+            echo "❌ Terraform validation failed — check errors above"
           fi
 
   # ============================================================================
