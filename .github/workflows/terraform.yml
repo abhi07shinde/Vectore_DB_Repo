@@ -39,8 +39,6 @@ jobs:
       - name: Terraform Format
         working-directory: ./terraform
         run: terraform fmt -recursive
-
-
       
       - name: Terraform Validate
         working-directory: ./terraform
@@ -51,7 +49,6 @@ jobs:
         working-directory: ./terraform
         run: |
           terraform plan \
-            -var="my_ip=${{ secrets.MY_IP }}" \
             -var="ssh_key_name=${{ secrets.SSH_KEY_NAME }}" \
             -var="qdrant_api_key=${{ secrets.QDRANT_API_KEY }}"
       
@@ -60,7 +57,6 @@ jobs:
         working-directory: ./terraform
         run: |
           terraform apply -auto-approve \
-            -var="my_ip=${{ secrets.MY_IP }}" \
             -var="ssh_key_name=${{ secrets.SSH_KEY_NAME }}" \
             -var="qdrant_api_key=${{ secrets.QDRANT_API_KEY }}"
       
@@ -69,6 +65,5 @@ jobs:
         working-directory: ./terraform
         run: |
           terraform destroy -auto-approve \
-            -var="my_ip=${{ secrets.MY_IP }}" \
             -var="ssh_key_name=${{ secrets.SSH_KEY_NAME }}" \
             -var="qdrant_api_key=${{ secrets.QDRANT_API_KEY }}"
