@@ -1,18 +1,18 @@
-data "aws_vpc" "default" {
-  default = true
+data "aws_vpc" "selected" {
+  id = "vpc-0e1bd6a79fb592f8" # This is your 'project-vpc' from the screenshot
 }
 
-data "aws_subnets" "default" {
+data "aws_subnets" "selected" {
   filter {
     name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
+    values = [data.aws_vpc.selected.id]
   }
 }
 
 resource "aws_security_group" "qdrant" {
   name        = "qdrant-sg"
   description = "Security group for Qdrant"
-  vpc_id      = data.aws_vpc.default.id
+  vpc_id      = data.aws_vpc.selected.id
 
   ingress {
     from_port   = 22
@@ -37,11 +37,11 @@ resource "aws_security_group" "qdrant" {
 }
 
 resource "aws_instance" "qdrant" {
-  ami                    = "ami-0084a47cc718c111a"  # ← Ubuntu 22.04 LTS for eu-central-1
+  ami                    = "ami-0084a47cc718c111a" # Ubuntu 22.04 for eu-central-1
   instance_type          = "t3.medium"
   key_name               = var.ssh_key_name
   vpc_security_group_ids = [aws_security_group.qdrant.id]
-  subnet_id              = tolist(data.aws_subnets.default.ids)[0]
+  subnet_id              = tolist(data.aws_subnets.selected.ids)[0]
 
   root_block_device {
     volume_size = 40
