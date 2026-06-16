@@ -1,34 +1,11 @@
 #!/bin/bash
-# =============================================================================
-# EC2 Bootstrap Script - Qdrant Setup
-# =============================================================================
-
 set -euxo pipefail
 exec > /var/log/user_data.log 2>&1
 
-echo "=========================================="
-echo " Qdrant EC2 Bootstrap Starting..."
-echo " Timestamp: $(date)"
-echo "=========================================="
-
-# ------------------------------------------------------------------------------
-# 1. System Update
-# ------------------------------------------------------------------------------
-echo "[1/6] Updating system..."
 apt-get update -y
-apt-get upgrade -y
+apt-get install -y ca-certificates curl gnupg lsb-release
 
-# ------------------------------------------------------------------------------
-# 2. Install Dependencies
-# ------------------------------------------------------------------------------
-echo "[2/6] Installing dependencies..."
-apt-get install -y ca-certificates curl gnupg lsb-release unzip htop awscli
-
-# ------------------------------------------------------------------------------
-# 3. Install Docker
-# ------------------------------------------------------------------------------
-echo "[3/6] Installing Docker..."
-
+# Install Docker
 install -m 0755 -d /etc/apt/keyrings
 
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
@@ -42,69 +19,37 @@ $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
 | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 apt-get update -y
+apt-get install -y docker-ce docker-ce-cli containerd.io
 
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-systemctl enable docker
 systemctl start docker
+systemctl enable docker
 
-# Allow ubuntu user to run docker
-usermod -aG docker ubuntu
-
-echo "Docker installed: $(docker --version)"
-
-# ------------------------------------------------------------------------------
-# 4. Setup EBS Volume
-# ------------------------------------------------------------------------------
-echo "[4/6] Setting up storage..."
-
-DEVICE=""
+# Wait for EBS
 for i in {1..12}; do
   DEVICE=$(lsblk -dpno NAME | grep -E "nvme1n1|xvdf" | head -n 1 || true)
-  if [ -n "$DEVICE" ]; then
-    break
-  fi
-  echo "Waiting for EBS... attempt $i"
+  if [ -n "$DEVICE" ]; then break; fi
   sleep 5
 done
 
+mkdir -p /qdrant-storage
+
 if [ -n "$DEVICE" ]; then
   if ! blkid "$DEVICE"; then
-    echo "Formatting $DEVICE..."
     mkfs.ext4 "$DEVICE"
   fi
 
-  mkdir -p /qdrant-storage
   mount "$DEVICE" /qdrant-storage
-
-  UUID=$(blkid -s UUID -o value "$DEVICE")
-  echo "UUID=$UUID /qdrant-storage ext4 defaults,nofail 0 2" >> /etc/fstab
-else
-  echo "No EBS found, using local storage"
-  mkdir -p /qdrant-storage
 fi
 
 mkdir -p /qdrant-storage/data
-chmod -R 755 /qdrant-storage
-
-# ------------------------------------------------------------------------------
-# 5. Run Qdrant
-# ------------------------------------------------------------------------------
-echo "[5/6] Starting Qdrant..."
 
 docker rm -f qdrant || true
 
-docker pull qdrant/qdrant:latest
-
 docker run -d \
   --name qdrant \
-  --restart always \
   -p 6333:6333 \
-  -p 6334:6334 \
   -v /qdrant-storage/data:/qdrant/storage \
-  -e QDRANT__SERVICE__API_KEY="my-secret-api-key" \
-  -e QDRANT__SERVICE__HOST="0.0.0.0" \
-  -e QDRANT__LOG_LEVEL="INFO" \
+  -e QDRANT__SERVICE__API_KEY="${qdrant_api_key}" \
   qdrant/qdrant:latest
 
 docker ps
