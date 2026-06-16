@@ -1,325 +1,72 @@
-# =============================================================================
-# .github/workflows/terraform.yml
-# GitHub Actions Pipeline for Qdrant Infrastructure Deployment
-#
-# Pipeline Flow:
-#   Push to main → validate → plan → apply (auto)
-#   Manual trigger → destroy (with confirmation)
-#
-# Required GitHub Secrets (Settings → Secrets → Actions):
-#   AWS_ACCESS_KEY_ID       - IAM access key
-#   AWS_SECRET_ACCESS_KEY   - IAM secret key
-#   AWS_REGION              - ap-south-1
-#   TF_STATE_BUCKET         - S3 bucket name for state
-#   SSH_KEY_NAME            - EC2 key pair name in AWS
-#   QDRANT_API_KEY          - API key for Qdrant auth
-#   ADMIN_SSH_CIDR          - Comma-separated admin IP CIDRs e.g. "1.2.3.4/32,5.6.7.8/32"
-#   TEAM_CIDR               - Team IP range e.g. "0.0.0.0/0" for distributed teams
-# =============================================================================
-
-name: "Qdrant Infrastructure — Terraform"
+name: Terraform
 
 on:
-  # Auto-deploy on push to main
   push:
-    branches:
-      - main
-    paths:
-      - "terraform/**"
-      - ".github/workflows/terraform.yml"
-
-  # Allow manual trigger for plan-only or destroy
+    branches: [main]
   workflow_dispatch:
     inputs:
       action:
-        description: "Terraform action to run"
+        description: 'Action to run'
         required: true
-        default: "plan"
+        default: 'plan'
         type: choice
         options:
           - plan
           - apply
           - destroy
 
-env:
-  TF_VERSION: "1.7.0"
-  TF_WORKING_DIR: "./terraform"
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-
-# Prevent concurrent workflows to avoid state conflicts
-concurrency:
-  group: terraform-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  # ============================================================================
-  # JOB 1: Validate & Format Check
-  # ============================================================================
-  validate:
-    name: "Validate & Format"
+  terraform:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.inputs.action != 'destroy'
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      
+      - uses: hashicorp/setup-terraform@v3
         with:
-          # Required so git push works from within the workflow
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-
-      - name: Configure AWS Credentials
+          terraform_version: 1.7.0
+      
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-
+      
       - name: Terraform Init
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          terraform init \
-            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
-            -backend-config="region=${{ secrets.AWS_REGION }}" \
-            -backend-config="key=qdrant/terraform.tfstate"
-
-      - name: Terraform Format — Auto-fix & Commit
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          # Auto-format all .tf files
-          terraform fmt -recursive
-
-          # Check if any files were changed by fmt
-          if ! git diff --quiet; then
-            echo "⚠️  Terraform files were not properly formatted. Auto-fixing..."
-            git config --global user.name  "github-actions[bot]"
-            git config --global user.email "github-actions[bot]@users.noreply.github.com"
-            git add -A
-            git commit -m "style: auto-format Terraform files via terraform fmt [skip ci]"
-            git push
-            echo "✅ Formatting fixed and committed automatically."
-          else
-            echo "✅ All Terraform files are already properly formatted."
-          fi
-
+        working-directory: ./terraform
+        run: terraform init -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
+      
+      - name: Terraform Format
+        working-directory: ./terraform
+        run: terraform fmt -check
+      
       - name: Terraform Validate
-        working-directory: ${{ env.TF_WORKING_DIR }}
+        working-directory: ./terraform
         run: terraform validate
-
-      - name: Post Validation Result
-        if: always()
-        run: |
-          if [ "${{ job.status }}" == "success" ]; then
-            echo "✅ Terraform validation passed"
-          else
-            echo "❌ Terraform validation failed — check errors above"
-          fi
-
-  # ============================================================================
-  # JOB 2: Plan
-  # ============================================================================
-  plan:
-    name: "Terraform Plan"
-    runs-on: ubuntu-latest
-    needs: validate
-    if: github.event_name == 'push' || github.event.inputs.action != 'destroy'
-
-    outputs:
-      plan_exitcode: ${{ steps.plan.outputs.exitcode }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-          terraform_wrapper: true
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Terraform Init
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          terraform init \
-            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
-            -backend-config="region=${{ secrets.AWS_REGION }}" \
-            -backend-config="key=qdrant/terraform.tfstate"
-
+      
       - name: Terraform Plan
-        id: plan
-        working-directory: ${{ env.TF_WORKING_DIR }}
+        if: github.event_name == 'push' || github.event.inputs.action == 'plan'
+        working-directory: ./terraform
         run: |
           terraform plan \
-            -var="aws_region=${{ secrets.AWS_REGION }}" \
-            -var="key_pair_name=${{ secrets.SSH_KEY_NAME }}" \
-            -var="qdrant_api_key=${{ secrets.QDRANT_API_KEY }}" \
-            -var='admin_ssh_cidr_blocks=["${{ secrets.ADMIN_SSH_CIDR }}"]' \
-            -var='team_cidr_blocks=["${{ secrets.TEAM_CIDR }}"]' \
-            -out=tfplan \
-            -detailed-exitcode
-        continue-on-error: true
-        env:
-          TF_LOG: "WARN"
-
-      - name: Upload Plan Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: tfplan-${{ github.sha }}
-          path: ${{ env.TF_WORKING_DIR }}/tfplan
-          retention-days: 7
-
-      - name: Check Plan Status
-        run: |
-          exitcode=${{ steps.plan.outputs.exitcode }}
-          if [ "$exitcode" == "0" ]; then
-            echo "ℹ️ No changes detected — infrastructure is up to date"
-          elif [ "$exitcode" == "2" ]; then
-            echo "📋 Changes detected — proceeding to apply"
-          else
-            echo "❌ Plan failed with exit code $exitcode"
-            exit 1
-          fi
-
-  # ============================================================================
-  # JOB 3: Apply
-  # ============================================================================
-  apply:
-    name: "Terraform Apply"
-    runs-on: ubuntu-latest
-    needs: plan
-    if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
-
-    environment:
-      name: production
-      # Optional: Add required reviewers in GitHub environment settings
-      # for an approval gate before apply runs
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Terraform Init
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          terraform init \
-            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
-            -backend-config="region=${{ secrets.AWS_REGION }}" \
-            -backend-config="key=qdrant/terraform.tfstate"
-
-      - name: Download Plan Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: tfplan-${{ github.sha }}
-          path: ${{ env.TF_WORKING_DIR }}
-
+            -var="my_ip=${{ secrets.MY_IP }}" \
+            -var="ssh_key_name=${{ secrets.SSH_KEY_NAME }}" \
+            -var="qdrant_api_key=${{ secrets.QDRANT_API_KEY }}"
+      
       - name: Terraform Apply
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform apply -auto-approve tfplan
-        env:
-          TF_LOG: "WARN"
-
-      - name: Extract Outputs
-        id: outputs
-        working-directory: ${{ env.TF_WORKING_DIR }}
+        if: github.event_name == 'push' || github.event.inputs.action == 'apply'
+        working-directory: ./terraform
         run: |
-          echo "## Qdrant Infrastructure Deployed Successfully" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Output | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-
-          ELASTIC_IP=$(terraform output -raw elastic_ip 2>/dev/null || echo "N/A")
-          QDRANT_ENDPOINT=$(terraform output -raw qdrant_endpoint 2>/dev/null || echo "N/A")
-          DASHBOARD=$(terraform output -raw qdrant_dashboard_url 2>/dev/null || echo "N/A")
-          INSTANCE_ID=$(terraform output -raw ec2_instance_id 2>/dev/null || echo "N/A")
-
-          echo "| Elastic IP | $ELASTIC_IP |" >> $GITHUB_STEP_SUMMARY
-          echo "| Qdrant API Endpoint | $QDRANT_ENDPOINT |" >> $GITHUB_STEP_SUMMARY
-          echo "| Qdrant Dashboard | $DASHBOARD |" >> $GITHUB_STEP_SUMMARY
-          echo "| EC2 Instance ID | $INSTANCE_ID |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> Note: Wait 2-3 minutes for Docker and Qdrant to finish installing on first boot." >> $GITHUB_STEP_SUMMARY
-
-  # ============================================================================
-  # JOB 4: Destroy (Manual Only — Safety Protected)
-  # ============================================================================
-  destroy:
-    name: "Terraform Destroy"
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
-
-    environment:
-      name: production
-      # IMPORTANT: Add required reviewers to the 'production' environment
-      # in GitHub Settings → Environments → production → Required reviewers
-      # This adds a human approval gate before destroy runs
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Terraform Init
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          terraform init \
-            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
-            -backend-config="region=${{ secrets.AWS_REGION }}" \
-            -backend-config="key=qdrant/terraform.tfstate"
-
+          terraform apply -auto-approve \
+            -var="my_ip=${{ secrets.MY_IP }}" \
+            -var="ssh_key_name=${{ secrets.SSH_KEY_NAME }}" \
+            -var="qdrant_api_key=${{ secrets.QDRANT_API_KEY }}"
+      
       - name: Terraform Destroy
-        working-directory: ${{ env.TF_WORKING_DIR }}
+        if: github.event.inputs.action == 'destroy'
+        working-directory: ./terraform
         run: |
-          terraform destroy \
-            -var="aws_region=${{ secrets.AWS_REGION }}" \
-            -var="key_pair_name=${{ secrets.SSH_KEY_NAME }}" \
-            -var="qdrant_api_key=${{ secrets.QDRANT_API_KEY }}" \
-            -var='admin_ssh_cidr_blocks=["${{ secrets.ADMIN_SSH_CIDR }}"]' \
-            -var='team_cidr_blocks=["${{ secrets.TEAM_CIDR }}"]' \
-            -auto-approve
-        env:
-          TF_LOG: "WARN"
-
-      - name: Post Destroy Summary
-        run: |
-          echo "## Infrastructure Destroyed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "All Qdrant AWS resources have been removed." >> $GITHUB_STEP_SUMMARY
-          echo "Triggered by: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-          echo "Time: $(date -u)" >> $GITHUB_STEP_SUMMARY
+          terraform destroy -auto-approve \
+            -var="my_ip=${{ secrets.MY_IP }}" \
+            -var="ssh_key_name=${{ secrets.SSH_KEY_NAME }}" \
+            -var="qdrant_api_key=${{ secrets.QDRANT_API_KEY }}"
