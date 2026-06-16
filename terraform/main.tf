@@ -37,7 +37,7 @@ resource "aws_security_group" "qdrant" {
 }
 
 resource "aws_instance" "qdrant" {
-  ami                    = "ami-0dee22c13ea7a9a67"
+  ami                    = "ami-0084a47cc718c111a"  # ← Ubuntu 22.04 LTS for eu-central-1
   instance_type          = "t3.medium"
   key_name               = var.ssh_key_name
   vpc_security_group_ids = [aws_security_group.qdrant.id]

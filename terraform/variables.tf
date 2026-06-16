@@ -1,5 +1,5 @@
 variable "aws_region" {
-  default = "eu-central-1"
+  default = "eu-central-1"  # ← Change this from ap-south-1
 }
 
 variable "my_ip" {
