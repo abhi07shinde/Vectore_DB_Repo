@@ -37,7 +37,7 @@ resource "aws_security_group" "qdrant" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"] # you can replace with your IP later
   }
 
   ingress {
@@ -56,7 +56,7 @@ resource "aws_security_group" "qdrant" {
 }
 
 resource "aws_instance" "qdrant" {
-  ami                    = "ami-0084a47cc718c111a" # Ubuntu 22.04 for eu-central-1
+  ami                    = "ami-0084a47cc718c111a" # Ubuntu 22.04
   instance_type          = "t3.medium"
   key_name               = var.ssh_key_name
   vpc_security_group_ids = [aws_security_group.qdrant.id]
@@ -67,14 +67,16 @@ resource "aws_instance" "qdrant" {
     volume_type = "gp3"
   }
 
-  user_data = <<-EOF
-              #!/bin/bash
-              apt-get update
-              apt-get install -y docker.io
-              systemctl start docker
-              systemctl enable docker
-              docker run -d --name qdrant --restart always -p 6333:6333 -e QDRANT__SERVICE__API_KEY=${var.qdrant_api_key} qdrant/qdrant:latest
-              EOF
+  # ✅ FIX APPLIED HERE
+  user_data_base64 = base64encode(<<EOF
+#!/bin/bash
+apt-get update
+apt-get install -y docker.io
+systemctl start docker
+systemctl enable docker
+docker run -d --name qdrant --restart always -p 6333:6333 -e QDRANT__SERVICE__API_KEY=${var.qdrant_api_key} qdrant/qdrant:latest
+EOF
+  )
 
   tags = {
     Name = "qdrant-server"
