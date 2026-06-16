@@ -1,6 +1,6 @@
 # Qdrant Vector Database — AWS Infrastructure
 
-> Terraform-managed EC2 deployment of Qdrant vector database on AWS (ap-south-1), deployed via GitHub Actions CI/CD pipeline.
+> Terraform-managed EC2 deployment of Qdrant vector database on AWS (eu-central-1), deployed via GitHub Actions CI/CD pipeline.
 
 ---
 
@@ -10,7 +10,7 @@
 GitHub Actions (CI/CD)
         │
         ▼
-   AWS ap-south-1
+   AWS eu-central-1
         │
    ┌────┴────────────────────────────────────┐
    │           Default VPC                   │
@@ -75,7 +75,7 @@ Run once manually before first deploy:
 
 ```bash
 # Create bucket (use a unique name)
-aws s3 mb s3://your-company-qdrant-tf-state --region ap-south-1
+aws s3 mb s3://your-company-qdrant-tf-state --region eu-central-1
 
 # Enable versioning (protects state history)
 aws s3api put-bucket-versioning \
@@ -104,7 +104,7 @@ with your actual bucket name.
 # Option A: Create via CLI
 aws ec2 create-key-pair \
   --key-name qdrant-key \
-  --region ap-south-1 \
+  --region eu-central-1 \
   --query 'KeyMaterial' \
   --output text > ~/.ssh/qdrant-key.pem
 
@@ -122,7 +122,7 @@ Go to your repo → **Settings → Secrets and Variables → Actions → New rep
 |---|---|---|
 | `AWS_ACCESS_KEY_ID` | IAM access key | `AKIAIOSFODNN7EXAMPLE` |
 | `AWS_SECRET_ACCESS_KEY` | IAM secret key | `wJalrXUtnFEMI/K7MDENG/...` |
-| `AWS_REGION` | AWS region | `ap-south-1` |
+| `AWS_REGION` | AWS region | `eu-central-1` |
 | `TF_STATE_BUCKET` | S3 bucket for state | `your-company-qdrant-tf-state` |
 | `SSH_KEY_NAME` | EC2 key pair name | `qdrant-key` |
 | `QDRANT_API_KEY` | Qdrant API key | `eKMUATTm5JJtifdrrH3OTBCI1qPjVvzfF6fX9e90` |
@@ -261,7 +261,7 @@ df -h /qdrant-storage
 
 ---
 
-## Cost Estimate (ap-south-1)
+## Cost Estimate (eu-central-1)
 
 | Resource | Cost/Month (approx) |
 |---|---|
