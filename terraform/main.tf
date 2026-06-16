@@ -1,18 +1,41 @@
-data "aws_vpc" "selected" {
-  id = "vpc-0e1bd6a79fb592f8" # This is your 'project-vpc' from the screenshot
+# 1. Create a simple dedicated VPC
+resource "aws_vpc" "qdrant" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+  tags = { Name = "qdrant-vpc" }
 }
 
-data "aws_subnets" "selected" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.selected.id]
+# 2. Create a Subnet
+resource "aws_subnet" "qdrant" {
+  vpc_id                  = aws_vpc.qdrant.id
+  cidr_block              = "10.0.1.0/24"
+  map_public_ip_on_launch = true
+  tags = { Name = "qdrant-subnet" }
+}
+
+# 3. Internet Access
+resource "aws_internet_gateway" "qdrant" {
+  vpc_id = aws_vpc.qdrant.id
+}
+
+resource "aws_route_table" "qdrant" {
+  vpc_id = aws_vpc.qdrant.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.qdrant.id
   }
 }
 
+resource "aws_route_table_association" "qdrant" {
+  subnet_id      = aws_subnet.qdrant.id
+  route_table_id = aws_route_table.qdrant.id
+}
+
+# 4. Security Group
 resource "aws_security_group" "qdrant" {
   name        = "qdrant-sg"
-  description = "Security group for Qdrant"
-  vpc_id      = data.aws_vpc.selected.id
+  vpc_id      = aws_vpc.qdrant.id
 
   ingress {
     from_port   = 22
@@ -36,12 +59,13 @@ resource "aws_security_group" "qdrant" {
   }
 }
 
+# 5. EC2 Server
 resource "aws_instance" "qdrant" {
   ami                    = "ami-0084a47cc718c111a" # Ubuntu 22.04 for eu-central-1
   instance_type          = "t3.medium"
   key_name               = var.ssh_key_name
   vpc_security_group_ids = [aws_security_group.qdrant.id]
-  subnet_id              = tolist(data.aws_subnets.selected.ids)[0]
+  subnet_id              = aws_subnet.qdrant.id
 
   root_block_device {
     volume_size = 40
@@ -62,6 +86,7 @@ resource "aws_instance" "qdrant" {
   }
 }
 
+# 6. Public IP
 resource "aws_eip" "qdrant" {
   instance = aws_instance.qdrant.id
   domain   = "vpc"
